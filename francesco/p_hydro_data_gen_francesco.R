@@ -27,10 +27,10 @@ S80 = ncvar_get(nc, "cwdx80")
 
 args = commandArgs(trailingOnly=TRUE)
 
-root_data_dir = "C:/Users/Lenovo/Desktop/berna/rsofundemo/data-raw" #insert you dir
 
-lsm_path = paste0(root_data_dir, "/LSM/")
-csv_path = paste0(root_data_dir, "/CSV/")
+# insert your path here
+lsm_path = paste0(here("data-raw","LSM"))
+csv_path = paste0(here("data-raw","CSV"))
 
 files_csv = list.files(csv_path)
 files_lsm = list.files(lsm_path)
@@ -54,6 +54,8 @@ keep <- fdk_site_fullyearsequence |>
 
 sites = sites[which(sites %in% keep$sitename)]
 
+zenodo_driver = zenodo_driver[which(zenodo_driver$sitename %in% sites),]
+
 driver = NULL
 
 ####-----
@@ -62,7 +64,7 @@ driver = NULL
 
 #from here starts for cycle
 num = 0
-for (i in sites[c(1,4)]){ #change to all
+for (i in sites[1:20]){ #change to all
   num = num + 1
   message("site number ",num)
   
@@ -78,13 +80,9 @@ for (i in sites[c(1,4)]){ #change to all
   
   
   # select years with good le_corr
-  ystart = fdk_site_fullyearsequence[fdk_site_fullyearsequence$sitename == i,]
-  yend = fdk_site_fullyearsequence[fdk_site_fullyearsequence$sitename == i,]
-  
-  ystart = ystart$year_start_lecorr
-  yend = yend$year_end_lecorr
-  
-  
+  ystart = fdk_site_fullyearsequence[fdk_site_fullyearsequence$sitename == i,]$year_start_lecorr
+  yend = fdk_site_fullyearsequence[fdk_site_fullyearsequence$sitename == i,]$year_end_lecorr
+
   file_csv = files_csv[grep(i,files_csv)]
   
   message("- reading FLUXNET format halfhourly data")
@@ -205,8 +203,15 @@ for (i in sites[c(1,4)]){ #change to all
   # Creating driver object  ------------------------------------------------------
   message("- compiling drivers")
   
-  # ccov = zenodo_driver[zenodo_driver$sitename == i,4][[1]][[1]]$ccov
-  # le = zenodo_driver[zenodo_driver$sitename == i,4][[1]][[1]]$le
+  ddf_24hr_mean <- ddf_24hr_mean |> filter(!(lubridate::mday(date) == 29 & lubridate::month(date) == 2))
+  ddf_3hr_maxima <- ddf_3hr_maxima |> filter(!(lubridate::mday(date) == 29 & lubridate::month(date) == 2))
+  ddf_daytime_mean <- ddf_daytime_mean |> filter(!(lubridate::mday(date) == 29 & lubridate::month(date) == 2))
+  
+  ccov = zenodo_driver[zenodo_driver$sitename == i,4][[1]][[1]]$ccov
+  le = zenodo_driver[zenodo_driver$sitename == i,4][[1]][[1]]$le
+  
+  ccov = ccov[1:dim(ddf_24hr_mean)[1]]
+  le = le[1:dim(ddf_24hr_mean)[1]]
   
   
   site_lon = meta[[1]]$longitude
@@ -239,11 +244,9 @@ for (i in sites[c(1,4)]){ #change to all
   
   
   kfFEC = 2.04
-  
-  # for demo, use just a subset of years
+
   p_hydro_drivers$forcing <-
     ddf_24hr_mean |>
-    dplyr::filter(!(lubridate::mday(date) == 29 & lubridate::month(date) == 2)) |>
     left_join(tmaxmin) |>
     group_by(date) |>
     summarize(
@@ -260,14 +263,13 @@ for (i in sites[c(1,4)]){ #change to all
       fapar = FPAR,
       co2 = CO2_F_MDS
     ) |>
-    mutate(ccov = zenodo_driver[zenodo_driver$sitename == i,4][[1]][[1]]$ccov)  |>
-    mutate(le = zenodo_driver[zenodo_driver$sitename == i,4][[1]][[1]]$le)  |>
+    mutate(ccov = ccov)  |>
+    mutate(le = le)  |>
     
     list()
   
   p_hydro_drivers$forcing_acclim <-
     ddf_3hr_maxima |>
-    dplyr::filter(!(lubridate::mday(date) == 29 & lubridate::month(date) == 2)) |>
     left_join(tmaxmin) |>
     group_by(date) |>
     summarize(
@@ -285,7 +287,7 @@ for (i in sites[c(1,4)]){ #change to all
       fapar = FPAR,
       co2 = CO2_F_MDS
     ) |>
-    mutate(ccov = zenodo_driver[zenodo_driver$sitename == i,4][[1]][[1]]$ccov)  |>
+    mutate(ccov = ccov)  |>
     list()
   
   driver = rbind(driver,p_hydro_drivers)
@@ -297,7 +299,7 @@ for (i in sites[c(1,4)]){ #change to all
 
 # write all drivers to file
 # apply compression to minimize space
-message(here("data","driver.rda"))
+message(paste0("save driver in ",here("data","driver.rda")))
 save(driver,
      file = here("data","driver.rda")
 )
