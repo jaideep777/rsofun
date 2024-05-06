@@ -1,6 +1,3 @@
-params <-
-  list(output_dir = ".")
-
 #' 
 ## --------------------------------------------------------------------
 library(tidyverse)
@@ -28,7 +25,7 @@ S80 = ncvar_get(nc, "cwdx80")
 args = commandArgs(trailingOnly=TRUE)
 
 
-# insert your path here
+
 lsm_path = paste0(here("data-raw","LSM"))
 csv_path = paste0(here("data-raw","CSV"))
 
@@ -56,15 +53,16 @@ sites = sites[which(sites %in% keep$sitename)]
 
 zenodo_driver = zenodo_driver[which(zenodo_driver$sitename %in% sites),]
 
-driver = NULL
 
+driver = NULL
+df = NULL 
 ####-----
 # for cycle
 ####-----
 
 #from here starts for cycle
 num = 0
-for (i in sites[1:20]){ #change to all
+for (i in sites){ #change to all
   num = num + 1
   message("site number ",num)
   
@@ -118,8 +116,6 @@ for (i in sites[1:20]){ #change to all
   
   # Aggregate around daily maximum ppfd for acclimating model
   # ---------------------------------------------------------
-  test.3day = hhdf %>% filter(date >= as_date(paste0(floor((ystart+yend)/2),"-06-01")) &
-                                date <= as_date(paste0(floor((ystart+yend)/2),"-06-03")) )
   
   aggregate_daily_3hr_maxima = function(df){
     # Get the time at which SW_IN is maximum
@@ -179,11 +175,11 @@ for (i in sites[1:20]){ #change to all
   ## --------------------------------------------------------------------
   # Apply daytime mean aggregation to all data
   # ------------------------------------------
-  message("- downsampling FLUXNET format - daytime means")
-  ddf_daytime_mean <- hhdf |>
-    group_by(date) |>
-    do(aggregate_daily_daylength(.)) |>
-    ungroup()
+ # message("- downsampling FLUXNET format - daytime means")
+  # ddf_daytime_mean <- hhdf |>
+  #   group_by(date) |>
+  #   do(aggregate_daily_daylength(.)) |>
+  #   ungroup()
   
   
   #'
@@ -291,11 +287,43 @@ for (i in sites[1:20]){ #change to all
     list()
   
   driver = rbind(driver,p_hydro_drivers)
+  
+  
+  forcing_daytime_mean <-
+    ddf_daytime_mean |>
+    left_join(tmaxmin) |>
+    group_by(date) |>
+    summarize(
+      date = date,
+      time = time,
+      temp = TA_F_MDS,
+      vpd = VPD_F_MDS * 100,
+      ppfd = SW_IN_F_MDS * kfFEC * 1e-06,
+      netrad = NETRAD,
+      patm = PA_F * 1000,
+      snow = 0,
+      rain = P_F * 48 / (60 * 60 * 24),
+      tmin = tmin, # TMIN_F_MDS,
+      tmax = tmax, # TMAX_F_MDS,
+      fapar = FPAR,
+      co2 = CO2_F_MDS,
+      ccov = 0,
+      daylength = daylength
+    ) |>
+    mutate(ccov = ccov)  |>
+    mutate(le = le)  |>
+    list()
+  tmp = data.frame(sitename = i,forcing_daytime_mean  = tibble(forcing_daytime_mean)  )
+  df = rbind(df,tmp)
+  
 }
 
 ####-----
 # save
 ####-----
+
+
+driver = driver |> left_join(df, by = "sitename")
 
 # write all drivers to file
 # apply compression to minimize space
